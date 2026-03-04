@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>สายเขียว — Terrain Energy Simulator</title>
+  <script src="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="dark-theme.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      font-family: 'Sarabun', 'Segoe UI', sans-serif;
+      background: var(--bg-primary); color: var(--text-primary);
+      height: 100dvh; overflow: hidden;
+      display: grid;
+      /* Responsive: header shrinks on short screens, sidebar narrows on small screens, charts adapt */
+      grid-template-rows: clamp(36px, 4.8vh, 48px) 1fr clamp(140px, 19vh, 215px);
+      grid-template-columns: clamp(210px, 19vw, 280px) 1fr;
+    }
+
+    /* ── Header ── */
+    header {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, rgba(10, 31, 68, 0.95) 0%, rgba(26, 58, 110, 0.95) 100%);
+      border-bottom: 2px solid var(--accent-cyan);
+      padding: 0 12px; min-width: 0;
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
+    }
+    header a {
+      color: var(--text-secondary); font-size: clamp(10px, 1.1vw, 13px);
+      text-decoration: none; white-space: nowrap; flex-shrink: 0;
+    }
+    header a:hover { color: var(--accent-cyan); text-decoration: underline; }
+    header h1 {
+      font-size: clamp(11px, 1.2vw, 14px); font-weight: 700; color: var(--accent-cyan);
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      text-shadow: 0 2px 10px rgba(0, 212, 255, 0.5);
+    }
+    #hdr-clock { font-size: clamp(10px, 1.1vw, 12px); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+    #hdr-status {
+      font-size: clamp(10px, 1vw, 11px); padding: 2px 7px; border-radius: 10px;
+      background: rgba(0, 212, 255, 0.2); color: var(--accent-cyan); white-space: nowrap; flex-shrink: 0;
+      border: 1px solid var(--border-color);
+    }
+    #hdr-status.loading { background: rgba(241, 196, 15, 0.2); color: #f1c40f; border-color: #f1c40f; }
+    #hdr-status.error   { background: rgba(231, 76, 60, 0.2); color: #e74c3c; border-color: #e74c3c; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      grid-row: 2; grid-column: 1;
+      background: rgba(26, 58, 110, 0.3);
+      border-right: 1px solid #22253a;
+      overflow-y: auto; overflow-x: hidden;
+      min-height: 0; /* required for grid overflow to work */
+    }
+    #sidebar::-webkit-scrollbar { width: 3px; }
+    #sidebar::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 2px; }
+
+    .s-section { padding: clamp(7px, 1vh, 10px) 12px; border-bottom: 1px solid #22253a; }
+    .s-title { font-size: 9px; color: #444; text-transform: uppercase;
+      letter-spacing: 1px; margin-bottom: 6px; }
+
+    /* Gauges */
+    .gauge { display: flex; align-items: center; gap: 6px; margin-bottom: clamp(4px, 0.7vh, 7px); }
+    .gauge-lbl { font-size: clamp(10px, 1vw, 11px); color: #666; width: 62px; flex-shrink: 0; }
+    .gauge-val {
+      font-size: clamp(13px, 1.5vw, 17px); font-weight: 700;
+      width: 60px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums;
+    }
+    .gauge-bar-bg { flex: 1; height: 4px; background: #22253a; border-radius: 3px; overflow: hidden; }
+    .gauge-bar { height: 100%; border-radius: 3px; transition: width 0.25s, background 0.25s; }
+
+    /* Power display */
+    #power-display {
+      text-align: center; padding: clamp(6px, 0.9vh, 10px) 0 clamp(3px, 0.5vh, 6px);
+      border-bottom: 1px solid #22253a;
+    }
+    #power-kw {
+      font-size: clamp(26px, 3.2vw, 38px); font-weight: 900;
+      transition: color 0.3s; font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    #power-label { font-size: 9px; color: #555; margin-top: 2px; }
+    #power-mode { font-size: clamp(10px, 1vw, 11px); margin-top: 3px; font-weight: 600; }
+
+    /* Grade indicator */
+    #grade-box {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: clamp(5px, 0.8vh, 9px) 12px; border-bottom: 1px solid #22253a;
+    }
+    #grade-arrow { font-size: clamp(18px, 2.2vw, 24px); transition: all 0.3s; }
+    #grade-pct { font-size: clamp(15px, 1.9vw, 21px); font-weight: 700; transition: color 0.3s; }
+    #grade-lbl { font-size: 9px; color: #555; margin-top: 2px; }
+
+    /* Control buttons (pause / follow) */
+    .ctrl-row {
+      display: flex; gap: 6px;
+      padding: clamp(5px, 0.8vh, 8px) 12px; border-bottom: 1px solid #22253a;
+    }
+    .ctrl-btn {
+      flex: 1; border: 1px solid #333; border-radius: 5px;
+      background: #1c1f2e; color: #888;
+      font-size: clamp(10px, 1vw, 11px); font-weight: 600; cursor: pointer;
+      padding: 4px 6px; transition: background 0.15s, color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .ctrl-btn:hover { background: #22253a; }
+    .ctrl-btn.active { background: #0d2a1a; color: #2ecc71; border-color: #2ecc7166; }
+    .ctrl-btn.paused { background: #2a1e0d; color: #f1c40f; border-color: #f1c40f66; }
+
+    /* Speed control */
+    .speed-ctrl {
+      display: flex; align-items: center; gap: 7px;
+      padding: clamp(5px, 0.8vh, 8px) 12px; border-bottom: 1px solid #22253a;
+    }
+    .speed-ctrl label { font-size: clamp(10px, 1vw, 11px); color: #666; white-space: nowrap; }
+    .speed-ctrl input[type=range] { flex: 1; accent-color: #2ecc71; height: 3px; }
+    #speed-val {
+      font-size: clamp(11px, 1.1vw, 13px); color: #2ecc71; font-weight: 700;
+      white-space: nowrap; min-width: 36px; text-align: right;
+    }
+
+    /* Trip stats */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .stat-item { background: #1c1f2e; border-radius: 5px; padding: 5px 7px; }
+    .stat-item .sv { font-size: clamp(12px, 1.3vw, 15px); font-weight: 700; color: #7eb3ff; }
+    .stat-item .sl { font-size: 9px; color: #555; margin-top: 1px; }
+
+    /* Stop list */
+    .stop-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: clamp(3px, 0.5vh, 5px) 12px;
+      font-size: clamp(10px, 1vw, 11px); cursor: pointer; transition: background 0.1s;
+    }
+    .stop-item:hover { background: #1c1f2e; }
+    .stop-dot { width: 8px; height: 8px; border-radius: 50%;
+      border: 2px solid #2ecc71; flex-shrink: 0; background: transparent; }
+    .stop-item.active .stop-dot { background: #2ecc71; }
+    .stop-item.passed .stop-dot { background: #2ecc7155; border-color: #2ecc7155; }
+    .stop-nm { color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stop-item.active .stop-nm { color: #2ecc71; font-weight: 700; }
+    .stop-item.passed .stop-nm { color: #444; }
+    .stop-dist { margin-left: auto; color: #555; font-size: 9px; white-space: nowrap; padding-left: 4px; flex-shrink: 0; }
+    .stop-item.active .stop-dist { color: #2ecc71; }
+
+    /* Language toggle */
+    .lang-toggle {
+      background: #2a2d3a; border: 1px solid #3a3d4a; border-radius: 6px;
+      padding: 3px; display: flex; gap: 2px; cursor: pointer; flex-shrink: 0;
+    }
+    .lang-btn {
+      padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+      color: #888; transition: all 0.15s; white-space: nowrap;
+    }
+    .lang-btn.active { background: #2ecc71; color: var(--primary-blue-dark); }
+    body[data-lang="th"] .lang-en { display: none; }
+    body[data-lang="en"] .lang-th { display: none; }
+
+    /* ── Map ── */
+    #map {
+      grid-row: 2; grid-column: 2;
+      width: 100%; height: 100%; min-height: 0;
+    }
+
+    /* ── Charts ── */
+    #charts {
+      grid-row: 3; grid-column: 1 / -1;
+      background: var(--primary-blue-dark);
+      border-top: 1px solid #22253a;
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      min-height: 0; overflow: hidden;
+    }
+    .chart-wrap {
+      padding: 5px 10px 6px;
+      display: flex; flex-direction: column;
+      min-height: 0; overflow: hidden;
+    }
+    .chart-wrap + .chart-wrap { border-left: 1px solid #22253a; }
+    .chart-lbl {
+      font-size: 9px; color: #444; text-transform: uppercase;
+      letter-spacing: 0.8px; margin-bottom: 3px; flex-shrink: 0;
+    }
+    .chart-wrap canvas { flex: 1; min-height: 0; max-height: 100%; display: block; }
+
+    /* Bus marker */
+    .bus-marker-g {
+      width: clamp(22px, 2.4vw, 28px); height: clamp(22px, 2.4vw, 28px);
+      border-radius: 50%; background: #2ecc71; border: 3px solid #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: clamp(10px, 1.2vw, 13px); cursor: pointer;
+      box-shadow: 0 0 14px rgba(46, 204, 113, 0.6); position: relative;
+    }
+    .bus-bat-bar { position: absolute; bottom: -6px; left: 0; right: 0;
+      height: 3px; border-radius: 2px; background: #333; }
+    .bus-bat-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+    /* Stop DOM markers */
+    .stop-pin {
+      width: clamp(10px, 1.1vw, 13px); height: clamp(10px, 1.1vw, 13px);
+      border-radius: 50%; border: 2px solid #2ecc71; background: var(--primary-blue-dark);
+      cursor: pointer; transition: transform 0.15s; box-shadow: 0 0 6px rgba(46, 204, 113, 0.4);
+    }
+    .stop-pin:hover { transform: scale(1.6); }
+    .stop-pin.active { background: #27ae60; box-shadow: 0 0 10px rgba(46, 204, 113, 0.7); }
+
+    /* Popup */
+    .maplibregl-popup-content {
+      background: rgba(26, 58, 110, 0.3) !important; color: #eee !important;
+      border: 1px solid #2ecc71 !important; border-radius: 7px !important;
+      padding: 9px 11px !important; font-size: 12px !important;
+      min-width: 130px; max-width: 190px;
+      box-shadow: 0 4px 16px #0008 !important;
+    }
+    .maplibregl-popup-tip { display: none !important; }
+    .pu-title { font-size: 13px; font-weight: 700; color: #2ecc71; margin-bottom: 5px; }
+    .pu-row { display: flex; justify-content: space-between; gap: 8px;
+      padding: 2px 0; font-size: 11px; }
+    .pu-row span:first-child { color: #666; }
+    .pu-row span:last-child { font-weight: 600; }
+
+    /* ── Responsive: narrow screens (< 900px) ── */
+    @media (max-width: 900px) {
+      body {
+        grid-template-columns: clamp(170px, 26vw, 230px) 1fr;
+        grid-template-rows: 36px 1fr clamp(120px, 18vh, 175px);
+      }
+      #power-kw { font-size: clamp(22px, 5.5vw, 30px); }
+      #grade-pct { font-size: clamp(14px, 3.5vw, 18px); }
+      .stat-item .sv { font-size: clamp(11px, 2.5vw, 14px); }
+      header h1 { display: none; }
+    }
+
+    /* ── Responsive: short screens (< 680px tall) ── */
+    @media (max-height: 680px) {
+      body { grid-template-rows: 34px 1fr clamp(110px, 18vh, 155px); }
+      #power-display { padding: 4px 0 2px; }
+      .s-section { padding: 5px 10px; }
+      .gauge { margin-bottom: 3px; }
+      #grade-box { padding: 4px 10px; }
+      .stop-item { padding: 2px 10px; }
+    }
+  </style>
+</head>
+<body data-lang="th">
+
+<!-- ── Header ── -->
+<header>
+  <span class="lang-th"><a href="route-optimizer.html">🛣️ หาเส้นทางประหยัด</a></span>
+  <span class="lang-en"><a href="route-optimizer.html">🛣️ Route Optimizer</a></span>
+  <h1 class="lang-th">🟢 สายเขียว — Terrain Energy Simulator (Single Bus + DEM)</h1>
+  <h1 class="lang-en">🟢 Green Line — Terrain Energy Simulator (Single Bus + DEM)</h1>
+  <span id="hdr-clock">--:--</span>
+  <span id="hdr-status" class="loading lang-th">กำลังโหลด DEM...</span>
+  <span id="hdr-status-en" class="loading lang-en">Loading DEM...</span>
+  <div class="lang-toggle" onclick="toggleLang()">
+    <div class="lang-btn" id="btn-th">TH</div>
+    <div class="lang-btn" id="btn-en">EN</div>
+  </div>
+</header>
+
+<!-- ── Sidebar ── -->
+<div id="sidebar">
+
+  <!-- Power readout -->
+  <div id="power-display">
+    <div id="power-kw" style="color:#2ecc71">0.0</div>
+    <div id="power-label"><span class="lang-th">kW กำลังงานทันที</span><span class="lang-en">kW instantaneous power</span></div>
+    <div id="power-mode">—</div>
+  </div>
+
+  <!-- Gauges -->
+  <div class="s-section">
+    <div class="s-title"><span class="lang-th">สถานะรถ</span><span class="lang-en">Status</span></div>
+    <div class="gauge">
+      <div class="gauge-lbl"><span class="lang-th">แบตเตอรี่</span><span class="lang-en">Battery</span></div>
+      <div class="gauge-bar-bg"><div class="gauge-bar" id="bat-bar" style="width:80%;background:#2ecc71"></div></div>
+      <div class="gauge-val" id="bat-val" style="color:#2ecc71">80%</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-lbl"><span class="lang-th">ความเร็ว</span><span class="lang-en">Speed</span></div>
+      <div class="gauge-bar-bg"><div class="gauge-bar" id="spd-bar" style="width:50%;background:#3498db"></div></div>
+      <div class="gauge-val" id="spd-val" style="color:#3498db">20 <span style="font-size:11px;font-weight:400">km/h</span></div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-lbl"><span class="lang-th">ความสูง</span><span class="lang-en">Elev.</span></div>
+      <div class="gauge-bar-bg"><div class="gauge-bar" id="elv-bar" style="width:40%;background:#9b59b6"></div></div>
+      <div class="gauge-val" id="elv-val" style="color:#9b59b6">-- <span style="font-size:11px;font-weight:400">ม.</span></div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-lbl"><span class="lang-th">RPM มอเตอร์</span><span class="lang-en">Motor RPM</span></div>
+      <div class="gauge-bar-bg"><div class="gauge-bar" id="rpm-bar" style="width:0%;background:#e67e22"></div></div>
+      <div class="gauge-val" id="rpm-val" style="color:#e67e22">0 <span style="font-size:11px;font-weight:400">rpm</span></div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-lbl"><span class="lang-th">แรงบิด</span><span class="lang-en">Torque</span></div>
+      <div class="gauge-bar-bg"><div class="gauge-bar" id="tq-bar" style="width:0%;background:#e67e22"></div></div>
+      <div class="gauge-val" id="tq-val" style="color:#e67e22">0 <span style="font-size:11px;font-weight:400">Nm</span></div>
+    </div>
+  </div>
+
+  <!-- Grade -->
+  <div id="grade-box">
+    <div style="text-align:center">
+      <div id="grade-arrow" style="color:#aaa">→</div>
+    </div>
+    <div style="text-align:center">
+      <div id="grade-pct" style="color:#aaa">0.0%</div>
+      <div id="grade-lbl"><span class="lang-th">ความชัน</span><span class="lang-en">Grade</span></div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#555;line-height:1.6">
+      <div id="grade-extra">—</div>
+    </div>
+  </div>
+
+  <!-- Speed control -->
+  <div class="speed-ctrl">
+    <label><span class="lang-th">ความเร็วจำลอง</span><span class="lang-en">Sim Speed</span></label>
+    <input type="range" id="speed-slider" min="1" max="10" step="0.5" value="3" oninput="updateSpeed(this.value)" />
+    <span id="speed-val">3×</span>
+  </div>
+
+  <!-- Playback / camera controls -->
+  <div class="ctrl-row">
+    <button id="btn-pause" class="ctrl-btn active" onclick="togglePause()"><span class="lang-th">⏸ หยุด</span><span class="lang-en">⏸ Pause</span></button>
+    <button id="btn-follow" class="ctrl-btn active" onclick="toggleFollow()"><span class="lang-th">📍 ตามรถ</span><span class="lang-en">📍 Follow</span></button>
+    <button class="ctrl-btn" onclick="resetTrip()"><span class="lang-th">↩ รีเซ็ต</span><span class="lang-en">↩ Reset</span></button>
+  </div>
+
+  <!-- Trip stats -->
+  <div class="s-section">
+    <div class="s-title"><span class="lang-th">สถิติการวิ่ง</span><span class="lang-en">Trip Stats</span></div>
+    <div class="stat-grid">
+      <div class="stat-item"><div class="sv" id="stat-km">0.0</div><div class="sl"><span class="lang-th">กม. รวม</span><span class="lang-en">Total km</span></div></div>
+      <div class="stat-item"><div class="sv" id="stat-kwh">0.00</div><div class="sl"><span class="lang-th">kWh ใช้ไป</span><span class="lang-en">kWh Used</span></div></div>
+      <div class="stat-item"><div class="sv" id="stat-eff">0.00</div><div class="sl">kWh/km</div></div>
+      <div class="stat-item"><div class="sv" id="stat-trips">0</div><div class="sl"><span class="lang-th">รอบที่สำเร็จ</span><span class="lang-en">Trips Done</span></div></div>
+      <div class="stat-item"><div class="sv" id="stat-co2">0</div><div class="sl"><span class="lang-th">CO₂ ลด (g)</span><span class="lang-en">CO₂ Saved (g)</span></div></div>
+      <div class="stat-item"><div class="sv" id="stat-regen">0.00</div><div class="sl"><span class="lang-th">kWh รีเจน</span><span class="lang-en">kWh Regen</span></div></div>
+    </div>
+  </div>
+
+  <!-- Stop list -->
+  <div class="s-section" style="border-bottom:none">
+    <div class="s-title"><span class="lang-th">ป้ายหยุด สายเขียว</span><span class="lang-en">Green Line Stops</span></div>
+    <div id="stop-list"></div>
+  </div>
+
+</div>
+
+<!-- ── Map ── -->
+<div id="map"></div>
+
+<!-- ── Charts ── -->
+<div id="charts">
+  <div class="chart-wrap">
+    <div class="chart-lbl"><span class="lang-th">โปรไฟล์ความสูง — DEM Terrain (ม.รทก.)</span><span class="lang-en">Elevation Profile — DEM Terrain (m asl.)</span></div>
+    <canvas id="chart-elev"></canvas>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-lbl"><span class="lang-th">กำลังงานทันที (kW) — + ใช้พลังงาน / − รีเจน</span><span class="lang-en">Instantaneous Power (kW) — + consume / − regen</span></div>
+    <canvas id="chart-power"></canvas>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════
+const BACKEND = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : `http://${window.location.hostname}:3000`;
+
+const TICK_MS = 150;          // ms per simulation tick
+const SIM_SEC_BASE = 30;      // sim seconds per real second at 1x
+let   speedMult = 3;          // user-controlled speed multiplier
+
+// Physics constants (KST EV mini bus 6.1m, 8 tonne loaded)
+const M       = 8000;     // kg
+const G_GRAV  = 9.81;     // m/s²
+const CR      = 0.011;    // rolling resistance coefficient
+const ETA_M   = 0.85;     // motor efficiency
+const ETA_R   = 0.70;     // regen efficiency
+const P_AUX   = 8.0;      // kW auxiliary (AC, lights, electronics)
+const MAX_SPD = 28;        // km/h max campus speed
+const MIN_SPD = 8;         // km/h min uphill speed
+const BASE_SPD = 20;       // km/h normal speed
+
+// Drivetrain constants (estimated for TOR EV3 64 mini bus)
+const WHEEL_RADIUS_M = 0.335;   // m  (215/75R16 equivalent)
+const GEAR_RATIO     = 8.5;     // single-speed reduction
+const ETA_DRIVE      = 0.92;    // drivetrain efficiency
+const MOTOR_MAX_NM   = 450;     // Nm peak motor torque
+const MOTOR_MAX_RPM  = 3500;    // RPM at top speed
+
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+let waypoints  = [];    // [[lng, lat], ...] green route coords
+let segDist    = [];    // km between consecutive waypoints
+let elevData   = [];    // elevation (m) at each waypoint from DEM
+let gradeData  = [];    // grade (decimal) for each segment
+let totalRouteKm = 0;
+let cumDistArr = [];    // cumulative km from start at each waypoint
+
+let greenStops = [];    // [{name_t, name_e, lng, lat, code}, ...]
+let stopMarkers = {};   // code → {marker, el}
+let elevGaugeMin = 150, elevGaugeMax = 220;  // updated from actual DEM range after load
+
+let simRunning = false;
+let simPaused  = false;
+let followCam  = true;
+let simTimer   = null;
+let simSecElapsed = 0;  // simulated seconds since last day reset
+
+const bus = {
+  wpIdx: 0, segProgress: 0,
+  lng: 0, lat: 0,
+  speedKmh: BASE_SPD, targetSpeedKmh: BASE_SPD,
+  powerKw: 0, regenKw: 0,
+  batteryKwh: 120,    // 80% of 150 kWh
+  totalKm: 0, totalKwhUsed: 0, totalKwhRegen: 0,
+  tripsCompleted: 0,
+  elevM: 0, gradePct: 0,
+  motorNm: 0, motorRpm: 0,   // torque & RPM
+};
+
+let busMarkerEl = null, busMarker = null;
+const POWER_HISTORY_LEN = 120;
+const powerHistory = Array(POWER_HISTORY_LEN).fill(0);
+
+// ════════════════════════════════════════════════════════
+// TERRAIN ELEVATION via Tilezen DEM tiles
+// ════════════════════════════════════════════════════════
+const tileCache = {};
+
+async function fetchTileCanvas(z, tx, ty) {
+  const key = `${z}/${tx}/${ty}`;
+  if (tileCache[key]) return tileCache[key];
+  const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${tx}/${ty}.png`;
+  try {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    tileCache[key] = cv;
+    return cv;
+  } catch { return null; }
+}
+
+function lngLatToTilePixel(lng, lat, z) {
+  const n = 2 ** z;
+  const tx = Math.floor((lng + 180) / 360 * n);
+  const sinLat = Math.sin(lat * Math.PI / 180);
+  const ty = Math.floor((1 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) / 2 * n);
+  const px = ((lng + 180) / 360 * n - tx) * 256;
+  const py = ((1 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) / 2 * n - ty) * 256;
+  return { tx, ty, px, py };
+}
+
+async function getDEMElevation(lng, lat, z = 14) {
+  const { tx, ty, px, py } = lngLatToTilePixel(lng, lat, z);
+  const cv = await fetchTileCanvas(z, tx, ty);
+  if (!cv) return null;
+  const [r, g, b] = cv.getContext('2d').getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
+  return r * 256 + g + b / 256 - 32768;
+}
+
+// Batch-fetch elevations for a subset of waypoints (sampled)
+async function buildElevationProfile() {
+  setStatus('loading', 'กำลังดึงข้อมูล DEM...', 'Fetching DEM...');
+  const n = waypoints.length;
+
+  // Sample every Nth waypoint for efficiency (DEM tiles are ~large area)
+  const STEP = Math.max(1, Math.floor(n / 80));
+  const indices = [];
+  for (let i = 0; i < n; i += STEP) indices.push(i);
+  if (indices[indices.length - 1] !== n - 1) indices.push(n - 1);
+
+  const rawElev = new Float32Array(n);
+  let fetched = 0;
+
+  for (const i of indices) {
+    const [lng, lat] = waypoints[i];
+    const e = await getDEMElevation(lng, lat, 14);
+    rawElev[i] = (e !== null && e > 50 && e < 600) ? e : -1;
+    fetched++;
+    if (fetched % 10 === 0) {
+      setStatus('loading', `DEM ${Math.round(fetched / indices.length * 100)}%`, `DEM ${Math.round(fetched / indices.length * 100)}%`);
+    }
+  }
+
+  // Interpolate between sampled points
+  let lastGood = -1;
+  for (let i = 0; i < n; i++) {
+    if (rawElev[i] >= 0) { lastGood = i; continue; }
+    // find next good
+    let nextGood = -1;
+    for (let j = i + 1; j < n; j++) { if (rawElev[j] >= 0) { nextGood = j; break; } }
+    if (lastGood < 0 && nextGood < 0) { rawElev[i] = 175; continue; }
+    if (lastGood < 0) { rawElev[i] = rawElev[nextGood]; continue; }
+    if (nextGood < 0) { rawElev[i] = rawElev[lastGood]; continue; }
+    const t = (i - lastGood) / (nextGood - lastGood);
+    rawElev[i] = rawElev[lastGood] + (rawElev[nextGood] - rawElev[lastGood]) * t;
+  }
+
+  // Light smoothing (3-point moving average)
+  elevData = Array.from(rawElev);
+  for (let i = 1; i < n - 1; i++) {
+    elevData[i] = (rawElev[i - 1] + rawElev[i] + rawElev[i + 1]) / 3;
+  }
+
+  // Synthetic road micro-terrain: bridges, culverts, berms, ramps, speed bumps
+  // KKU 30m DEM tiles cannot capture sub-metre road-level variations
+  for (let i = 0; i < n; i++) {
+    const t = i / Math.max(1, n - 1);
+    // Low-freq: gentle campus-wide undulation (ponds, embankments) ±3m
+    const low  = 3.2 * Math.sin(2 * Math.PI * t * 3.2 + 0.8)
+               + 2.1 * Math.sin(2 * Math.PI * t * 1.7 + 2.1);
+    // Mid-freq: bridge approaches, road section grade changes ±1m
+    const mid  = 1.1 * Math.sin(2 * Math.PI * t * 8.5 + 1.3)
+               + 0.9 * Math.sin(2 * Math.PI * t * 11.3 + 0.5);
+    // High-freq: speed bumps, drainage crowns ±0.4m
+    const high = 0.45 * Math.sin(2 * Math.PI * t * 23 + 3.1)
+               + 0.35 * Math.sin(2 * Math.PI * t * 34 + 0.9);
+    elevData[i] += low + mid + high;
+  }
+
+  // Compute grade per segment
+  gradeData = [];
+  for (let i = 0; i < n - 1; i++) {
+    const dElev = elevData[i + 1] - elevData[i];    // m
+    const dDist = segDist[i] * 1000;                // m
+    gradeData.push(dDist > 0.1 ? dElev / dDist : 0);
+  }
+  gradeData.push(0); // last segment
+
+  // Diagnostic + set dynamic gauge range from actual DEM data
+  const elevMin = Math.min(...elevData);
+  const elevMax = Math.max(...elevData);
+  const elevRange = elevMax - elevMin;
+  // Give gauge a 2m pad on each side; if flat, use ±5m window around mean
+  const pad = Math.max(2, elevRange * 0.1);
+  elevGaugeMin = elevMin - pad;
+  elevGaugeMax = elevMax + pad;
+  if (elevRange < 1.5) {
+    setStatus('loading', `DEM แบน (${elevMin.toFixed(0)}ม.) — พื้นที่ราบหรือ CORS block`, `DEM flat (${elevMin.toFixed(0)}m) — terrain flat or CORS block`);
+  } else {
+    setStatus('ok', `DEM โหลดสำเร็จ · ${elevMin.toFixed(0)}–${elevMax.toFixed(0)}ม. (ช่วง ${elevRange.toFixed(1)}ม.)`, `DEM loaded · ${elevMin.toFixed(0)}–${elevMax.toFixed(0)}m (range ${elevRange.toFixed(1)}m)`);
+  }
+  buildElevChart();
+}
+
+// ════════════════════════════════════════════════════════
+// PHYSICS MODEL
+// ════════════════════════════════════════════════════════
+function calcPower(grade, speedKmh) {
+  // grade: decimal (0.05 = 5% uphill, -0.03 = 3% downhill)
+  // speedKmh: km/h
+  const v = speedKmh / 3.6;   // m/s
+  const F_roll  = M * G_GRAV * CR;              // N
+  const F_grade = M * G_GRAV * grade;           // N (positive = uphill)
+  const F_total = F_roll + F_grade;
+
+  if (F_total >= 0) {
+    // Propulsion: motor pulling forward
+    return (F_total * v) / (ETA_M * 1000) + P_AUX;
+  } else {
+    // Net deceleration force: regenerative braking
+    return (F_total * v * ETA_R) / 1000 + P_AUX;
+  }
+}
+
+function calcTargetSpeed(grade) {
+  // Uphill slows down, downhill speeds up slightly
+  if (grade > 0) return Math.max(MIN_SPD, BASE_SPD * (1 - grade * 8));
+  return Math.min(MAX_SPD, BASE_SPD * (1 - grade * 2.5));
+}
+
+function calcTorque(grade, speedKmh) {
+  // Net tractive force at driven wheels
+  const F_net = M * G_GRAV * CR + M * G_GRAV * grade;   // N
+  const v = Math.max(0.5, speedKmh / 3.6);               // m/s (avoid /0)
+
+  // Wheel torque → motor torque (via gear ratio + efficiency)
+  const T_wheel = F_net * WHEEL_RADIUS_M;                 // Nm
+  const eff     = F_net >= 0 ? ETA_DRIVE : 1 / ETA_DRIVE;
+  const T_motor = T_wheel / (GEAR_RATIO * eff);           // Nm
+
+  // Motor shaft RPM
+  const rpm = (v / WHEEL_RADIUS_M) * GEAR_RATIO * 60 / (2 * Math.PI);
+
+  return { motorNm: T_motor, motorRpm: Math.round(rpm) };
+}
+
+// ════════════════════════════════════════════════════════
+// SIMULATION LOOP
+// ════════════════════════════════════════════════════════
+function moveBus(simSec) {
+  const n = waypoints.length;
+
+  // Smooth speed toward target (acceleration: ±2 m/s² = ±7.2 km/h/s)
+  const maxDeltaKmh = (2 * 3.6) * simSec;
+  const diff = bus.targetSpeedKmh - bus.speedKmh;
+  bus.speedKmh += Math.max(-maxDeltaKmh, Math.min(maxDeltaKmh, diff));
+
+  let distLeft = (bus.speedKmh / 3600) * simSec;  // km
+  let distMoved = 0;
+  let loopGuard = n;
+
+  while (distLeft > 0.000001 && loopGuard-- > 0) {
+    const seg = segDist[bus.wpIdx];
+    if (!seg || seg < 0.000001) {
+      bus.wpIdx = (bus.wpIdx + 1) % (n - 1);
+      if (bus.wpIdx === 0) {
+        bus.tripsCompleted++;
+        bus.segProgress = 0;
+      }
+      continue;
+    }
+    const segRem = seg * (1 - bus.segProgress);
+    if (distLeft >= segRem) {
+      distLeft -= segRem;
+      distMoved += segRem;
+      bus.wpIdx = (bus.wpIdx + 1) % (n - 1);
+      if (bus.wpIdx === 0) {
+        bus.tripsCompleted++;
+        bus.segProgress = 0;
+      } else {
+        bus.segProgress = 0;
+      }
+    } else {
+      bus.segProgress += distLeft / seg;
+      distMoved += distLeft;
+      distLeft = 0;
+    }
+  }
+
+  // Interpolate position
+  const wpA = waypoints[bus.wpIdx];
+  const wpB = waypoints[bus.wpIdx + 1] || waypoints[bus.wpIdx];
+  bus.lng = wpA[0] + (wpB[0] - wpA[0]) * bus.segProgress;
+  bus.lat = wpA[1] + (wpB[1] - wpA[1]) * bus.segProgress;
+
+  // Interpolate elevation
+  const eA = elevData[bus.wpIdx] || 175;
+  const eB = elevData[bus.wpIdx + 1] || eA;
+  bus.elevM = eA + (eB - eA) * bus.segProgress;
+
+  // Grade at current position
+  const grade = gradeData[bus.wpIdx] || 0;
+  bus.gradePct = grade * 100;
+
+  // Update target speed based on upcoming grade
+  bus.targetSpeedKmh = calcTargetSpeed(grade);
+
+  // Stop-proximity deceleration: slow to ~5 km/h near each bus stop
+  if (greenStops.length > 0) {
+    let minStopDistM = Infinity;
+    for (const s of greenStops) {
+      const d = haversineM([bus.lng, bus.lat], [s.lng, s.lat]);
+      if (d < minStopDistM) minStopDistM = d;
+    }
+    if (minStopDistM < 25) {
+      bus.targetSpeedKmh = Math.min(bus.targetSpeedKmh, 4);        // at stop
+    } else if (minStopDistM < 100) {
+      const lim = Math.max(4, BASE_SPD * (minStopDistM - 25) / 75);
+      bus.targetSpeedKmh = Math.min(bus.targetSpeedKmh, lim);      // decelerate in
+    }
+  }
+
+  // Motor torque + RPM
+  const tq = calcTorque(grade, bus.speedKmh);
+  bus.motorNm  = tq.motorNm;
+  bus.motorRpm = tq.motorRpm;
+
+  // Energy
+  const pKw = calcPower(grade, bus.speedKmh);
+  bus.powerKw = pKw;
+  const kwhDelta = pKw * (simSec / 3600);  // kWh this tick
+
+  if (kwhDelta > 0) {
+    bus.batteryKwh = Math.max(0, bus.batteryKwh - kwhDelta);
+    bus.totalKwhUsed += kwhDelta;
+    bus.regenKw = 0;
+  } else {
+    // Regen: charge battery (capped at 100%)
+    const regenKwh = Math.abs(kwhDelta);
+    bus.batteryKwh = Math.min(150, bus.batteryKwh + regenKwh);
+    bus.totalKwhRegen += regenKwh;
+    bus.regenKw = Math.abs(pKw - P_AUX);
+  }
+
+  // Recharge at depot if battery < 20%
+  if (bus.batteryKwh < 30) bus.batteryKwh = 120;  // quick recharge at route start
+
+  bus.totalKm += distMoved;
+  simSecElapsed += simSec;
+}
+
+function tick() {
+  if (!simRunning || simPaused) return;
+  const simSec = SIM_SEC_BASE * speedMult * (TICK_MS / 1000);
+  moveBus(simSec);
+  updateMarker();
+  updateSidebar();
+  updatePowerHistory();
+  updateNearestStop();
+  simTimer = setTimeout(tick, TICK_MS);
+}
+
+function startSim() {
+  if (simRunning) return;
+  simRunning = true;
+  tick();
+}
+
+// ════════════════════════════════════════════════════════
+// MAP SETUP
+// ════════════════════════════════════════════════════════
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/bright',
+  center: [102.8160, 16.4600],
+  zoom: 13,
+  pitch: 50,
+  bearing: -15,
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+map.addControl(new maplibregl.TerrainControl({ source: 'terrain', exaggeration: 2.0 }), 'top-right');
+
+map.on('load', async () => {
+  // ── 1. Terrain DEM ──
+  try {
+    map.addSource('terrain', {
+      type: 'raster-dem',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      tileSize: 256, maxzoom: 15, encoding: 'terrarium',
+      attribution: '© Tilezen/AWS',
+    });
+    map.setTerrain({ source: 'terrain', exaggeration: 2.0 });
+    map.addLayer({
+      id: 'hillshade', type: 'hillshade', source: 'terrain',
+      paint: { 'hillshade-exaggeration': 0.7, 'hillshade-shadow-color': '#000',
+               'hillshade-illumination-direction': 315, 'hillshade-accent-color': '#404040' },
+    }, 'water');
+  } catch (e) { console.error('[Map] Terrain:', e.message); }
+
+  // ── 2. Fetch green route + stops ──
+  const [routesRes, stopsRes] = await Promise.allSettled([
+    fetch(`${BACKEND}/routes`).then(r => r.json()),
+    fetch(`${BACKEND}/bus-stops`).then(r => r.json()),
+  ]);
+
+  // Extract green route
+  if (routesRes.status === 'fulfilled') {
+    const greenFeat = routesRes.value.features.find(f => f.properties.id === 4);
+    if (greenFeat) {
+      waypoints = greenFeat.geometry.coordinates;  // [[lng, lat], ...]
+      // Compute segment distances
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const [lng1, lat1] = waypoints[i], [lng2, lat2] = waypoints[i + 1];
+        const dx = (lng2 - lng1) * 111.32 * Math.cos(lat1 * Math.PI / 180);
+        const dy = (lat2 - lat1) * 110.574;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        segDist.push(d);
+        totalRouteKm += d;
+      }
+      segDist.push(0);
+      // Build cumulative distance array
+      cumDistArr = [0];
+      for (let i = 0; i < segDist.length - 1; i++) cumDistArr.push(cumDistArr[i] + segDist[i]);
+
+      // Add route to map
+      map.addSource('green-route', { type: 'geojson', data: routesRes.value });
+      // Filter to only show green line
+      const greenOnly = {
+        type: 'FeatureCollection',
+        features: [greenFeat],
+      };
+      map.getSource('green-route').setData(greenOnly);
+      map.addLayer({
+        id: 'green-outline', type: 'line', source: 'green-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#000', 'line-width': 11, 'line-opacity': 0.25 },
+      });
+      map.addLayer({
+        id: 'green-line', type: 'line', source: 'green-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#2ecc71', 'line-width': 6, 'line-opacity': 0.95 },
+      });
+
+      // Set initial bus position
+      bus.lng = waypoints[0][0]; bus.lat = waypoints[0][1];
+    }
+  }
+
+  // Extract green stops (code_number contains 'g')
+  if (stopsRes.status === 'fulfilled') {
+    const allStops = stopsRes.value.features;
+    greenStops = allStops
+      .filter(f => f.properties.code_number && /g\d/.test(f.properties.code_number))
+      .map(f => ({
+        name_t: f.properties.name_t,
+        name_e: f.properties.name_e,
+        lng: f.geometry.coordinates[0],
+        lat: f.geometry.coordinates[1],
+        code: f.properties.code_number,
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
+    // Add stop DOM markers
+    for (const stop of greenStops) {
+      const el = document.createElement('div');
+      el.className = 'stop-pin';
+      el.title = stop.name_t;
+      el.addEventListener('click', () => {
+        new maplibregl.Popup({ closeButton: false })
+          .setLngLat([stop.lng, stop.lat])
+          .setHTML(`<div class="pu-title">${stop.name_t}</div>
+            <div class="pu-row"><span>English</span><span>${stop.name_e}</span></div>
+            <div class="pu-row"><span>รหัสป้าย</span><span>${stop.code}</span></div>`)
+          .addTo(map);
+      });
+      const m = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([stop.lng, stop.lat])
+        .addTo(map);
+      stopMarkers[stop.code] = { marker: m, el };
+    }
+    renderStopList();
+  }
+
+  // ── 3. Bus DOM marker ──
+  busMarkerEl = document.createElement('div');
+  busMarkerEl.className = 'bus-marker-g';
+  busMarkerEl.innerHTML = '🚌';
+  const batBar = document.createElement('div');
+  batBar.className = 'bus-bat-bar';
+  const batFill = document.createElement('div');
+  batFill.className = 'bus-bat-fill';
+  batFill.style.background = '#2ecc71';
+  batFill.style.width = '80%';
+  batBar.appendChild(batFill);
+  busMarkerEl.appendChild(batBar);
+  busMarkerEl._batFill = batFill;
+  busMarker = new maplibregl.Marker({ element: busMarkerEl, anchor: 'center' })
+    .setLngLat([bus.lng, bus.lat])
+    .addTo(map);
+
+  // ── 4. Fit bounds → build DEM profile ──
+  if (waypoints.length > 1) {
+    const lngs = waypoints.map(w => w[0]), lats = waypoints.map(w => w[1]);
+    const bounds = [
+      [Math.min(...lngs) - 0.005, Math.min(...lats) - 0.005],
+      [Math.max(...lngs) + 0.005, Math.max(...lats) + 0.005],
+    ];
+    map.fitBounds(bounds, { padding: 40, pitch: 0, bearing: 0, duration: 800 });
+    map.once('idle', async () => {
+      await buildElevationProfile();
+      // Zoom in to start position + start simulation
+      setTimeout(() => {
+        map.easeTo({ center: [bus.lng, bus.lat], zoom: 15.5, pitch: 50, bearing: -15, duration: 1200 });
+        setTimeout(startSim, 1400);
+      }, 300);
+    });
+  }
+});
+
+// ════════════════════════════════════════════════════════
+// MARKER & UI UPDATES
+// ════════════════════════════════════════════════════════
+function updateMarker() {
+  if (!busMarker) return;
+  busMarker.setLngLat([bus.lng, bus.lat]);
+  if (followCam) {
+    map.easeTo({ center: [bus.lng, bus.lat], duration: TICK_MS * 0.85, easing: t => t });
+  }
+  // Battery fill
+  const batPct = (bus.batteryKwh / 150) * 100;
+  busMarkerEl._batFill.style.width = batPct + '%';
+  busMarkerEl._batFill.style.background = batPct > 50 ? '#2ecc71' : batPct > 20 ? '#f39c12' : '#e74c3c';
+}
+
+function updateSidebar() {
+  // Clock (simulated hours from service start)
+  const simH = 6 + simSecElapsed / 3600;
+  const h = Math.floor(simH) % 24;
+  const m = Math.floor((simH % 1) * 60);
+  document.getElementById('hdr-clock').textContent =
+    `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} (sim)`;
+
+  // Power
+  const pKw = bus.powerKw;
+  const pEl = document.getElementById('power-kw');
+  pEl.textContent = pKw.toFixed(1);
+  let pColor, pMode;
+  if (pKw > P_AUX + 5) { pColor = '#e74c3c'; pMode = t('⚡ ใช้พลังงานสูง (ขาขึ้น)', '⚡ High Power (Uphill)'); }
+  else if (pKw < P_AUX - 2) { pColor = '#3498db'; pMode = t('♻ รีเจนเนอเรทีฟเบรก (ขาลง)', '♻ Regen Brake (Downhill)'); }
+  else { pColor = '#2ecc71'; pMode = t('→ ความเร็วคงที่', '→ Cruise Speed'); }
+  pEl.style.color = pColor;
+  document.getElementById('power-mode').textContent = pMode;
+  document.getElementById('power-mode').style.color = pColor;
+
+  // Battery gauge
+  const batPct = (bus.batteryKwh / 150) * 100;
+  const batColor = batPct > 50 ? '#2ecc71' : batPct > 20 ? '#f39c12' : '#e74c3c';
+  document.getElementById('bat-bar').style.width  = batPct + '%';
+  document.getElementById('bat-bar').style.background = batColor;
+  document.getElementById('bat-val').textContent  = Math.round(batPct) + '%';
+  document.getElementById('bat-val').style.color  = batColor;
+
+  // Speed gauge
+  const spdPct = (bus.speedKmh / MAX_SPD) * 100;
+  document.getElementById('spd-bar').style.width  = spdPct + '%';
+  document.getElementById('spd-val').innerHTML = `${Math.round(bus.speedKmh)} <span style="font-size:11px;font-weight:400">km/h</span>`;
+
+  // Elevation gauge — dynamic range from actual DEM (set in buildElevationProfile)
+  const elvPct = Math.max(0, Math.min(100,
+    (bus.elevM - elevGaugeMin) / (elevGaugeMax - elevGaugeMin) * 100));
+  document.getElementById('elv-bar').style.width  = elvPct + '%';
+  document.getElementById('elv-val').innerHTML = `${Math.round(bus.elevM)} <span style="font-size:11px;font-weight:400">ม.</span>`;
+
+  // Motor RPM gauge
+  const rpmPct = Math.min(100, (bus.motorRpm / MOTOR_MAX_RPM) * 100);
+  document.getElementById('rpm-bar').style.width = rpmPct + '%';
+  document.getElementById('rpm-val').innerHTML = `${bus.motorRpm} <span style="font-size:11px;font-weight:400">rpm</span>`;
+
+  // Motor Torque gauge (orange = propulsion, blue = regen)
+  const tqAbs   = Math.abs(bus.motorNm);
+  const tqPct   = Math.min(100, tqAbs / MOTOR_MAX_NM * 100);
+  const tqColor = bus.motorNm < 0 ? '#3498db' : '#e67e22';
+  document.getElementById('tq-bar').style.width      = tqPct + '%';
+  document.getElementById('tq-bar').style.background = tqColor;
+  document.getElementById('tq-val').style.color      = tqColor;
+  document.getElementById('tq-val').innerHTML = `${Math.round(tqAbs)} <span style="font-size:11px;font-weight:400">Nm</span>`;
+
+  // Grade indicator
+  const gPct = bus.gradePct;
+  const gEl = document.getElementById('grade-pct');
+  const aEl = document.getElementById('grade-arrow');
+  const xEl = document.getElementById('grade-extra');
+  if (Math.abs(gPct) < 0.3) {
+    gEl.textContent = '0.0%'; gEl.style.color = '#aaa';
+    aEl.textContent = '→'; aEl.style.color = '#aaa';
+    xEl.textContent = t('ระนาบ', 'Flat');
+  } else if (gPct > 0) {
+    gEl.textContent = '+' + gPct.toFixed(1) + '%'; gEl.style.color = '#e74c3c';
+    aEl.textContent = '▲'; aEl.style.color = '#e74c3c';
+    xEl.innerHTML = `<span style="color:#e74c3c">${t('ขาขึ้น','Uphill')}</span><br>+${Math.round(gPct * M * G_GRAV / 1000 * 10) / 10} kN`;
+  } else {
+    gEl.textContent = gPct.toFixed(1) + '%'; gEl.style.color = '#3498db';
+    aEl.textContent = '▼'; aEl.style.color = '#3498db';
+    xEl.innerHTML = `<span style="color:#3498db">${t('ขาลง','Downhill')}</span><br>${t('รีเจน','Regen')} ${Math.abs(bus.regenKw).toFixed(1)} kW`;
+  }
+
+  // Stats
+  document.getElementById('stat-km').textContent   = bus.totalKm.toFixed(1);
+  document.getElementById('stat-kwh').textContent  = bus.totalKwhUsed.toFixed(2);
+  document.getElementById('stat-eff').textContent  = bus.totalKm > 0.1 ? (bus.totalKwhUsed / bus.totalKm).toFixed(2) : '0.00';
+  document.getElementById('stat-trips').textContent = bus.tripsCompleted;
+  document.getElementById('stat-co2').textContent  = Math.round(bus.totalKm * 0.715 * 1000); // g CO2 avoided vs NGV
+  document.getElementById('stat-regen').textContent = bus.totalKwhRegen.toFixed(2);
+
+  // Update elevation chart position marker
+  updateElevChartPosition();
+}
+
+// ════════════════════════════════════════════════════════
+// STOP PROXIMITY
+// ════════════════════════════════════════════════════════
+function haversineM([lng1, lat1], [lng2, lat2]) {
+  const dx = (lng2 - lng1) * 111320 * Math.cos(lat1 * Math.PI / 180);
+  const dy = (lat2 - lat1) * 110574;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function updateNearestStop() {
+  if (!greenStops.length) return;
+  const busDistKm = cumDistArr[bus.wpIdx] + segDist[bus.wpIdx] * bus.segProgress;
+  for (const stop of greenStops) {
+    const distM = haversineM([bus.lng, bus.lat], [stop.lng, stop.lat]);
+    const isActive = distM < 80;
+    const isPassed = false; // simplified: just show active
+    const el = document.querySelector(`[data-stop="${stop.code}"]`);
+    if (el) {
+      el.classList.toggle('active', isActive);
+      el.querySelector('.stop-dist').textContent = distM < 1000 ? `${Math.round(distM)} ม.` : `${(distM/1000).toFixed(1)} กม.`;
+    }
+    if (stopMarkers[stop.code]) {
+      stopMarkers[stop.code].el.classList.toggle('active', isActive);
+    }
+  }
+}
+
+function renderStopList() {
+  const list = document.getElementById('stop-list');
+  list.innerHTML = greenStops.map(s => `
+    <div class="stop-item" data-stop="${s.code}"
+         onclick="flyToStop(${s.lng}, ${s.lat})">
+      <div class="stop-dot"></div>
+      <div class="stop-nm">${s.name_t}</div>
+      <div class="stop-dist">—</div>
+    </div>`).join('');
+}
+
+function flyToStop(lng, lat) {
+  map.easeTo({ center: [lng, lat], zoom: 17, pitch: 50, duration: 800 });
+}
+
+// ════════════════════════════════════════════════════════
+// CHARTS
+// ════════════════════════════════════════════════════════
+let elevChart = null, powerChart = null;
+
+function buildElevChart() {
+  const n = waypoints.length;
+  // Sample for display (every 3rd point)
+  const step = Math.max(1, Math.floor(n / 200));
+  const labels = [], data = [];
+  for (let i = 0; i < n; i += step) {
+    labels.push(cumDistArr[i] ? cumDistArr[i].toFixed(2) : '0');
+    data.push(elevData[i] ? +elevData[i].toFixed(1) : null);
+  }
+
+  const validData = data.filter(v => v !== null);
+  const dMin = validData.length ? Math.min(...validData) : 170;
+  const dMax = validData.length ? Math.max(...validData) : 182;
+  const dPad = Math.max(0.5, (dMax - dMin) * 0.08);
+
+  const ctx = document.getElementById('chart-elev').getContext('2d');
+  if (elevChart) elevChart.destroy();
+  elevChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Elevation (m)',
+          data,
+          borderColor: '#2ecc71',
+          backgroundColor: 'rgba(46,204,113,0.12)',
+          borderWidth: 1.5,
+          fill: true,
+          pointRadius: 0,
+          tension: 0.3,
+        },
+        {
+          label: 'Current',
+          data: [{ x: '0', y: data[0] || 175 }],
+          type: 'scatter',
+          borderColor: '#f1c40f',
+          backgroundColor: '#f1c40f',
+          pointRadius: 7,
+          pointHoverRadius: 9,
+          showLine: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)} ม. @ ${ctx.parsed.x} กม.` }
+      }},
+      scales: {
+        x: {
+          type: 'category', ticks: { color: '#555', maxTicksLimit: 8,
+            callback: (v, i) => labels[i] ? `${labels[i]}` : '' },
+          grid: { color: '#22253a' },
+          title: { display: true, text: 'ระยะทาง (km)', color: '#555', font: { size: 10 } },
+        },
+        y: {
+          min: dMin - dPad,
+          max: dMax + dPad,
+          ticks: { color: '#555', callback: v => `${Math.round(v)}ม.` },
+          grid: { color: '#22253a' },
+          title: { display: true, text: 'ระดับ (ม.)', color: '#555', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function updateElevChartPosition() {
+  if (!elevChart || !cumDistArr.length) return;
+  const busDistKm = cumDistArr[bus.wpIdx] + (segDist[bus.wpIdx] || 0) * bus.segProgress;
+  const busElev   = bus.elevM;
+  // Find nearest label
+  const labels = elevChart.data.labels;
+  const step = Math.max(1, Math.floor(waypoints.length / 200));
+  const labelIdx = Math.min(labels.length - 1, Math.floor(bus.wpIdx / step));
+  elevChart.data.datasets[1].data = [{ x: labels[labelIdx] || '0', y: +busElev.toFixed(1) }];
+  elevChart.update('none');
+}
+
+function buildPowerChart() {
+  const ctx = document.getElementById('chart-power').getContext('2d');
+  powerChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: Array.from({ length: POWER_HISTORY_LEN }, (_, i) => i),
+      datasets: [{
+        label: 'Power (kW)',
+        data: [...powerHistory],
+        borderColor: ctx => {
+          const v = ctx.chart.data.datasets[0].data;
+          return v.every(x => x >= 0) ? '#e74c3c' : '#3498db';
+        },
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        segment: {
+          borderColor: ctx => ctx.p0.parsed.y < P_AUX - 1 ? '#3498db' : '#e74c3c',
+        },
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          ticks: { color: '#555', callback: v => `${v}kW` },
+          grid: { color: '#22253a' },
+          title: { display: true, text: 'kW', color: '#555', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function updatePowerHistory() {
+  powerHistory.push(+bus.powerKw.toFixed(1));
+  if (powerHistory.length > POWER_HISTORY_LEN) powerHistory.shift();
+  if (!powerChart) {
+    buildPowerChart();
+    return;
+  }
+  powerChart.data.datasets[0].data = [...powerHistory];
+  powerChart.update('none');
+}
+
+// ════════════════════════════════════════════════════════
+// CONTROLS
+// ════════════════════════════════════════════════════════
+function updateSpeed(v) {
+  speedMult = parseFloat(v);
+  document.getElementById('speed-val').textContent = v + '×';
+}
+
+function togglePause() {
+  if (!simRunning) return;
+  simPaused = !simPaused;
+  const btn = document.getElementById('btn-pause');
+  if (simPaused) {
+    clearTimeout(simTimer);
+    btn.innerHTML = '<span class="lang-th">▶ เดิน</span><span class="lang-en">▶ Run</span>';
+    btn.className = 'ctrl-btn paused';
+  } else {
+    btn.innerHTML = '<span class="lang-th">⏸ หยุด</span><span class="lang-en">⏸ Pause</span>';
+    btn.className = 'ctrl-btn active';
+    tick();
+  }
+}
+
+function toggleFollow() {
+  followCam = !followCam;
+  const btn = document.getElementById('btn-follow');
+  btn.innerHTML = followCam
+    ? '<span class="lang-th">📍 ตามรถ</span><span class="lang-en">📍 Follow</span>'
+    : '<span class="lang-th">🗺 อิสระ</span><span class="lang-en">🗺 Free</span>';
+  btn.className = followCam ? 'ctrl-btn active' : 'ctrl-btn';
+}
+
+function resetTrip() {
+  // Reset bus to start of route
+  bus.wpIdx = 0; bus.segProgress = 0;
+  bus.speedKmh = BASE_SPD; bus.targetSpeedKmh = BASE_SPD;
+  bus.powerKw = 0; bus.regenKw = 0;
+  bus.batteryKwh = 120;
+  bus.totalKm = 0; bus.totalKwhUsed = 0; bus.totalKwhRegen = 0;
+  bus.tripsCompleted = 0; bus.elevM = 0; bus.gradePct = 0;
+  bus.motorNm = 0; bus.motorRpm = 0;
+  simSecElapsed = 0;
+  powerHistory.fill(0);
+  if (waypoints.length > 0) {
+    bus.lng = waypoints[0][0]; bus.lat = waypoints[0][1];
+    if (busMarker) busMarker.setLngLat([bus.lng, bus.lat]);
+    if (followCam) map.easeTo({ center: [bus.lng, bus.lat], zoom: 15.5, pitch: 50, duration: 600 });
+  }
+  // Resume if paused
+  if (simPaused) togglePause();
+}
+
+function t(th, en) {
+  return (document.body.getAttribute('data-lang') || 'th') === 'en' ? en : th;
+}
+
+function setStatus(type, msgTh, msgEn) {
+  const cls = type === 'ok' ? '' : type === 'error' ? 'error' : 'loading';
+  const el = document.getElementById('hdr-status');
+  el.textContent = msgTh;
+  el.className = (cls + ' lang-th').trim();
+  const elEn = document.getElementById('hdr-status-en');
+  if (elEn) { elEn.textContent = msgEn || msgTh; elEn.className = (cls + ' lang-en').trim(); }
+}
+
+// ── Language toggle ──────────────────────────────────────────
+function toggleLang() {
+  const body = document.body;
+  const currentLang = body.getAttribute('data-lang');
+  const newLang = currentLang === 'th' ? 'en' : 'th';
+  body.setAttribute('data-lang', newLang);
+
+  document.getElementById('btn-th').classList.toggle('active', newLang === 'th');
+  document.getElementById('btn-en').classList.toggle('active', newLang === 'en');
+
+  localStorage.setItem('lang', newLang);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const savedLang = localStorage.getItem('lang') || 'th';
+  document.body.setAttribute('data-lang', savedLang);
+  document.getElementById('btn-th').classList.toggle('active', savedLang === 'th');
+  document.getElementById('btn-en').classList.toggle('active', savedLang === 'en');
+});
+</script>
+</body>
+</html>

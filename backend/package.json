@@ -1,0 +1,22 @@
+{
+  "name": "ev-bus-backend",
+  "version": "1.0.0",
+  "description": "Digital Twin EV Bus Backend — KKU",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "aedes": "^0.51.3",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "net": "^1.0.2",
+    "pg": "^8.11.3",
+    "socket.io": "^4.6.2",
+    "ws": "^8.14.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

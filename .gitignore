@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Environment variables (ทุก directory)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# Docker volumes / local data
+pg_data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp / test files
+*.tmp
+map_test.json
+routes_test.json
+out*.txt
+read_pdfs.js
+
+# Claude local settings (ไม่ต้อง share)
+.claude/
+
+# Build output (ถ้ามีในอนาคต)
+dist/
+build/

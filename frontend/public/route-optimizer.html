@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Route Optimizer — Digital Twin EV Bus KKU</title>
+  <link href="dark-theme.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      font-family: 'Sarabun', 'Segoe UI', sans-serif;
+      background: var(--bg-primary); color: var(--text-primary);
+      height: 100dvh; overflow: hidden;
+      display: grid;
+      grid-template-rows: clamp(36px, 4.8vh, 48px) 1fr clamp(140px, 19vh, 200px);
+      grid-template-columns: clamp(250px, 22vw, 330px) 1fr;
+    }
+
+    /* ── Header ── */
+    header {
+      grid-row: 1; grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(26, 43, 94, 0.6); border-bottom: 2px solid var(--border-color);
+      padding: 0 14px; min-width: 0;
+    }
+    header a { color: var(--accent-cyan); font-size: clamp(10px, 1.1vw, 13px); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+    header a:hover { text-decoration: underline; }
+    header h1 { font-size: clamp(11px, 1.2vw, 14px); font-weight: 700; color: var(--accent-cyan); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #hdr-status { font-size: clamp(10px, 1vw, 11px); padding: 2px 7px; border-radius: 10px; background: rgba(26, 43, 94, 0.5); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+    #hdr-status.loading { background: #2a2410; color: #f1c40f; }
+    #hdr-status.ok      { background: #0d2a0d; color: #2ecc71; }
+    #hdr-status.error   { background: #2a0d0d; color: #e74c3c; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      grid-row: 2; grid-column: 1;
+      background: rgba(26, 43, 94, 0.6); border-right: 1px solid rgba(90, 160, 242, 0.2);
+      overflow-y: auto; overflow-x: hidden; min-height: 0;
+      display: flex; flex-direction: column;
+    }
+    #sidebar::-webkit-scrollbar { width: 3px; }
+    #sidebar::-webkit-scrollbar-thumb { background: rgba(90, 160, 242, 0.3); border-radius: 2px; }
+
+    .s-section { padding: clamp(7px, 1vh, 10px) 12px; border-bottom: 1px solid rgba(90, 160, 242, 0.2); }
+    .s-title { font-size: 9px; color: #7a8ba0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+
+    /* GeoJSON textarea */
+    #geojson-input {
+      width: 100%;
+      height: clamp(100px, 13vh, 160px);
+      background: var(--bg-primary); color: var(--text-secondary);
+      border: 1px solid rgba(90, 160, 242, 0.2); border-radius: 5px;
+      padding: 7px; font-family: 'Consolas', monospace; font-size: 10px;
+      resize: vertical; outline: none; line-height: 1.5;
+    }
+    #geojson-input:focus { border-color: var(--accent-cyan)44; }
+    #geojson-input.valid   { border-color: #2ecc7155; background: rgba(10, 26, 15, 0.5); }
+    #geojson-input.invalid { border-color: #e74c3c55; background: rgba(26, 10, 10, 0.5); }
+
+    .input-hint { font-size: 9px; color: #7a8ba0; margin-top: 5px; line-height: 1.6; }
+    .input-hint a { color: var(--accent-cyan)88; text-decoration: none; }
+    .input-hint a:hover { color: var(--accent-cyan); }
+
+    #parse-info { font-size: 10px; margin-top: 5px; color: #2ecc71; min-height: 14px; }
+
+    /* Mode selector */
+    .mode-row { display: flex; flex-direction: column; gap: 5px; }
+    .mode-btn {
+      display: flex; align-items: center; gap: 9px;
+      padding: 7px 9px; border-radius: 6px; cursor: pointer;
+      border: 1px solid rgba(90, 160, 242, 0.2); background: rgba(26, 43, 94, 0.5);
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { background: rgba(90, 160, 242, 0.2); }
+    .mode-btn.active { border-color: var(--accent-cyan)55; background: rgba(10, 21, 53, 0.6); }
+    .mode-icon { font-size: 16px; flex-shrink: 0; }
+    .mode-title { font-size: clamp(10px, 1vw, 11px); font-weight: 600; color: var(--text-muted); }
+    .mode-btn.active .mode-title { color: var(--accent-cyan); }
+    .mode-desc { font-size: 9px; color: #7a8ba0; margin-top: 1px; }
+
+    /* Compute */
+    #btn-compute {
+      width: 100%; padding: 9px; border: 1px solid var(--border-color); border-radius: 6px;
+      background: var(--accent-cyan)18; color: var(--accent-cyan);
+      font-size: clamp(11px, 1.1vw, 13px); font-weight: 700; cursor: pointer;
+      transition: background 0.15s; letter-spacing: 0.3px;
+    }
+    #btn-compute:hover:not(:disabled) { background: var(--accent-cyan)28; }
+    #btn-compute:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Metrics */
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .metric-item { background: rgba(26, 43, 94, 0.5); border-radius: 5px; padding: 5px 8px; }
+    .metric-item .mv { font-size: clamp(13px, 1.4vw, 16px); font-weight: 700; color: var(--accent-cyan); font-variant-numeric: tabular-nums; }
+    .metric-item .ml { font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+
+    /* Stop sequence */
+    .stop-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
+    .stop-num {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent-cyan); color: var(--primary-blue-dark);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; flex-shrink: 0;
+    }
+    .stop-num.start { background: #2ecc71; }
+    .stop-nm { font-size: clamp(10px, 1vw, 11px); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .stop-elv { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+    .seg-arrow { padding-left: 27px; font-size: 9px; color: var(--text-primary); margin: 1px 0; }
+
+    /* Comparison row */
+    .cmp-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+      padding: 5px 0; border-bottom: 1px solid rgba(90, 160, 242, 0.15);
+      font-size: clamp(10px, 1vw, 11px);
+    }
+    .cmp-label { color: var(--text-muted); font-size: 9px; }
+    .cmp-val-a { color: var(--text-muted); }
+    .cmp-val-b { color: #2ecc71; font-weight: 600; }
+    .cmp-val-b.worse { color: #e74c3c; }
+
+    /* Export */
+    #btn-export {
+      width: 100%; padding: 6px; border: 1px solid #2ecc7133; border-radius: 5px;
+      background: #0d2a1a; color: #2ecc71;
+      font-size: clamp(10px, 1vw, 11px); font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #btn-export:hover { background: #0d2a1a99; }
+
+    /* Empty hint */
+    .empty-hint {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 9px; color: rgba(90, 160, 242, 0.3); text-align: center; padding: 20px;
+    }
+    .empty-hint .big { font-size: 36px; filter: grayscale(1) opacity(0.4); }
+    .empty-hint p { font-size: 10px; color: var(--text-primary); line-height: 1.7; }
+
+    /* ── Map ── */
+    #map { grid-row: 2; grid-column: 2; width: 100%; height: 100%; min-height: 0; }
+
+    /* Stop DOM markers */
+    .opt-stop-pin {
+      width: clamp(22px, 2.2vw, 28px); height: clamp(22px, 2.2vw, 28px);
+      border-radius: 50%; background: var(--accent-cyan); border: 2px solid #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: clamp(9px, 1vw, 11px); font-weight: 700; color: var(--primary-blue-dark);
+      cursor: pointer; box-shadow: 0 2px 8px #0007;
+      transition: transform 0.15s;
+    }
+    .opt-stop-pin:hover { transform: scale(1.25); }
+    .opt-stop-pin.is-start { background: #2ecc71; }
+
+    /* ── Charts ── */
+    #charts {
+      grid-row: 3; grid-column: 1 / -1;
+      background: var(--bg-primary); border-top: 1px solid rgba(90, 160, 242, 0.2);
+      display: grid; grid-template-columns: 3fr 2fr;
+      min-height: 0; overflow: hidden;
+    }
+    .chart-wrap { padding: 5px 10px 6px; display: flex; flex-direction: column; min-height: 0; }
+    .chart-wrap + .chart-wrap { border-left: 1px solid rgba(90, 160, 242, 0.2); }
+    .chart-lbl { font-size: 9px; color: #7a8ba0; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; flex-shrink: 0; }
+    .chart-wrap canvas { flex: 1; min-height: 0; max-height: 100%; display: block; }
+
+    /* Popup */
+    .maplibregl-popup-content {
+      background: rgba(26, 43, 94, 0.6) !important; color: var(--text-primary) !important;
+      border: 1px solid var(--accent-cyan) !important; border-radius: 7px !important;
+      padding: 9px 11px !important; font-size: 12px !important;
+      min-width: 140px; max-width: 210px;
+      box-shadow: 0 4px 16px #0009 !important;
+    }
+    .maplibregl-popup-tip { display: none !important; }
+    .pu-title { font-size: 13px; font-weight: 700; color: var(--accent-cyan); margin-bottom: 5px; }
+    .pu-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 11px; }
+    .pu-row span:first-child { color: #666; }
+    .pu-row span:last-child { font-weight: 600; }
+
+    /* Language toggle */
+    .lang-toggle {
+      background: rgba(90, 160, 242, 0.3); border: 1px solid #3a3d4a; border-radius: 6px;
+      padding: 3px; display: flex; gap: 2px; cursor: pointer; flex-shrink: 0;
+    }
+    .lang-btn {
+      padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+      color: var(--text-muted); transition: all 0.15s; white-space: nowrap;
+    }
+    .lang-btn.active { background: var(--accent-cyan); color: var(--primary-blue-dark); }
+    body[data-lang="th"] .lang-en { display: none; }
+    body[data-lang="en"] .lang-th { display: none; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      body { grid-template-columns: clamp(200px, 30vw, 260px) 1fr; }
+    }
+    @media (max-height: 680px) {
+      body { grid-template-rows: 34px 1fr clamp(110px, 18vh, 155px); }
+      #geojson-input { height: clamp(70px, 10vh, 110px); }
+    }
+  </style>
+</head>
+<body data-lang="th">
+
+<!-- ── Header ── -->
+<header>
+  <span class="lang-th"><a href="sim-green.html">🗺️ จำลองสายเขียว</a></span>
+  <span class="lang-en"><a href="sim-green.html">🗺️ Green Line</a></span>
+  <h1 class="lang-th">🛣️ Route Optimizer — Digital Twin EV Bus · KKU</h1>
+  <h1 class="lang-en">🛣️ Route Optimizer — Digital Twin EV Bus · KKU</h1>
+  <span id="hdr-status" class="lang-th">รอข้อมูล</span>
+  <span id="hdr-status-en" class="lang-en">Waiting...</span>
+  <div class="lang-toggle" onclick="toggleLang()">
+    <div class="lang-btn" id="btn-th">TH</div>
+    <div class="lang-btn" id="btn-en">EN</div>
+  </div>
+</header>
+
+<!-- ── Sidebar ── -->
+<div id="sidebar">
+
+  <!-- GeoJSON Input -->
+  <div class="s-section">
+    <div class="s-title"><span class="lang-th">📍 วางตำแหน่งป้ายหยุด (GeoJSON จาก geojson.io)</span><span class="lang-en">📍 Paste Bus Stops (GeoJSON from geojson.io)</span></div>
+    <textarea id="geojson-input"
+      placeholder='{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "ป้ายหยุดที่ 1" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [102.822, 16.472]
+      }
+    }
+  ]
+}'
+      oninput="onGeoJSONInput(this)"></textarea>
+    <div id="parse-info"></div>
+    <div class="input-hint">
+      <span class="lang-th">ไป <a href="https://geojson.io" target="_blank">geojson.io</a> → วางหมุดป้ายหยุด → กด Save → Copy GeoJSON มาวางที่นี่<br>
+      ✔ ต้องการ Point features เท่านั้น · ใส่ property <code style="color:var(--accent-cyan)88">"name"</code> เพื่อตั้งชื่อป้าย</span>
+      <span class="lang-en">Go to <a href="https://geojson.io" target="_blank">geojson.io</a> → place markers → Save → copy GeoJSON here<br>
+      ✔ Point features only · add <code style="color:var(--accent-cyan)88">"name"</code> property to label stops</span>
+    </div>
+  </div>
+
+  <!-- Optimization Mode -->
+  <div class="s-section">
+    <div class="s-title"><span class="lang-th">เป้าหมาย Optimization</span><span class="lang-en">Optimization Goal</span></div>
+    <div class="mode-row">
+      <div class="mode-btn active" id="mode-dist" onclick="setMode('dist')">
+        <div class="mode-icon">📏</div>
+        <div>
+          <div class="mode-title"><span class="lang-th">ระยะทางสั้นสุด</span><span class="lang-en">Min Distance</span></div>
+          <div class="mode-desc"><span class="lang-th">Nearest-Neighbor TSP · ลดระยะทางรวม</span><span class="lang-en">Nearest-Neighbor TSP · minimize total km</span></div>
+        </div>
+      </div>
+      <div class="mode-btn" id="mode-energy" onclick="setMode('energy')">
+        <div class="mode-icon">⚡</div>
+        <div>
+          <div class="mode-title"><span class="lang-th">พลังงานน้อยสุด</span><span class="lang-en">Min Energy</span></div>
+          <div class="mode-desc"><span class="lang-th">Grade-aware TSP · ลด kWh ตาม DEM terrain</span><span class="lang-en">Grade-aware TSP · minimize kWh via DEM terrain</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compute -->
+  <div class="s-section">
+    <button id="btn-compute" onclick="runOptimize()" disabled><span class="lang-th">🔧 คำนวณเส้นทางที่ดีที่สุด</span><span class="lang-en">🔧 Optimize Route</span></button>
+  </div>
+
+  <!-- Results (hidden until run) -->
+  <div id="results-section" style="display:none">
+    <div class="s-section">
+      <div class="s-title"><span class="lang-th">ผลลัพธ์เส้นทาง</span><span class="lang-en">Route Results</span></div>
+      <div class="metric-grid" id="metric-grid"></div>
+    </div>
+    <div class="s-section" style="border-bottom:none">
+      <div class="s-title"><span class="lang-th">ลำดับป้ายหยุดที่ดีที่สุด</span><span class="lang-en">Optimal Stop Sequence</span></div>
+      <div id="stop-sequence"></div>
+    </div>
+    <div class="s-section">
+      <button id="btn-export" onclick="exportRoute()"><span class="lang-th">📥 ส่งออกเส้นทาง GeoJSON</span><span class="lang-en">📥 Export Route GeoJSON</span></button>
+    </div>
+  </div>
+
+  <!-- Empty hint -->
+  <div class="empty-hint" id="empty-hint">
+    <div class="big">🗺</div>
+    <p class="lang-th">
+      วางตำแหน่งป้ายหยุดเป็น GeoJSON<br>
+      ระบบจะคำนวณเส้นทางที่สั้นที่สุด<br>
+      หรือประหยัดพลังงานที่สุดตาม DEM
+    </p>
+    <p class="lang-en">
+      Paste bus stop GeoJSON above<br>
+      System calculates shortest route<br>
+      or lowest energy path via DEM terrain
+    </p>
+  </div>
+
+</div>
+
+<!-- ── Map ── -->
+<div id="map"></div>
+
+<!-- ── Charts ── -->
+<div id="charts">
+  <div class="chart-wrap">
+    <div class="chart-lbl"><span class="lang-th">โปรไฟล์ความสูงตามลำดับป้าย (ม.รทก.) — DEM Tilezen</span><span class="lang-en">Elevation Profile by Stop Order (m asl.) — DEM Tilezen</span></div>
+    <canvas id="chart-elev"></canvas>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-lbl"><span class="lang-th">พลังงานแต่ละ Segment (kWh) — สีแดง = ขาขึ้น</span><span class="lang-en">Energy per Segment (kWh) — red = uphill</span></div>
+    <canvas id="chart-energy"></canvas>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// CONFIG (TOR EV3 64 / KST EV mini bus 6.1m)
+// ════════════════════════════════════════════════════════
+const KWH_PER_KM = 0.65;   // kWh/km base consumption
+const COST_THB_KWH = 4.20; // THB per kWh (PEA peak rate)
+const NGV_CO2_G_KM = 715;  // g CO₂/km for NGV baseline
+
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+let stops       = [];   // [{name, lng, lat, elevM}]
+let routeOrder  = [];   // index array into stops (incl. closing [0] at end)
+let routeGeoms  = [];   // OSRM route geometries for each segment
+let mode        = 'dist';
+let optGeoJSON  = null; // for export
+const pinMarkers = [];
+
+// ════════════════════════════════════════════════════════
+// MAP
+// ════════════════════════════════════════════════════════
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/bright',
+  center: [102.822, 16.472],
+  zoom: 14, pitch: 40, bearing: 0,
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+map.on('load', () => {
+  // Terrain DEM
+  try {
+    map.addSource('terrain', {
+      type: 'raster-dem',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      tileSize: 256, maxzoom: 15, encoding: 'terrarium',
+    });
+    map.setTerrain({ source: 'terrain', exaggeration: 1.5 });
+    map.addLayer({
+      id: 'hillshade', type: 'hillshade', source: 'terrain',
+      paint: { 'hillshade-exaggeration': 0.45, 'hillshade-shadow-color': '#000',
+               'hillshade-illumination-direction': 315 },
+    }, 'water');
+  } catch (e) { console.warn('[terrain]', e.message); }
+
+  // Route layer (main forward segments)
+  map.addSource('opt-route', { type: 'geojson', data: emptyFC() });
+  map.addLayer({
+    id: 'opt-route-bg', type: 'line', source: 'opt-route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#000', 'line-width': 10, 'line-opacity': 0.2 },
+  });
+  map.addLayer({
+    id: 'opt-route-fg', type: 'line', source: 'opt-route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': 'var(--accent-cyan)', 'line-width': 5, 'line-opacity': 0.95 },
+  });
+
+  // Return segment (dashed)
+  map.addSource('opt-return', { type: 'geojson', data: emptyFC() });
+  map.addLayer({
+    id: 'opt-return-line', type: 'line', source: 'opt-return',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': 'var(--accent-cyan)', 'line-width': 3, 'line-opacity': 0.4,
+             'line-dasharray': [5, 4] },
+  });
+});
+
+function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
+
+// ════════════════════════════════════════════════════════
+// DEM ELEVATION  (Tilezen terrarium tiles, same as sim-green.html)
+// ════════════════════════════════════════════════════════
+const tileCache = {};
+
+async function fetchTileCanvas(z, tx, ty) {
+  const key = `${z}/${tx}/${ty}`;
+  if (tileCache[key]) return tileCache[key];
+  const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${tx}/${ty}.png`;
+  try {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    tileCache[key] = cv;
+    return cv;
+  } catch { return null; }
+}
+
+function lngLatToTilePixel(lng, lat, z) {
+  const n = 2 ** z;
+  const tx = Math.floor((lng + 180) / 360 * n);
+  const sinLat = Math.sin(lat * Math.PI / 180);
+  const ty = Math.floor((1 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) / 2 * n);
+  const px = ((lng + 180) / 360 * n - tx) * 256;
+  const py = ((1 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) / 2 * n - ty) * 256;
+  return { tx, ty, px, py };
+}
+
+async function getDEMElevation(lng, lat, z = 14) {
+  const { tx, ty, px, py } = lngLatToTilePixel(lng, lat, z);
+  const cv = await fetchTileCanvas(z, tx, ty);
+  if (!cv) return null;
+  const [r, g, b] = cv.getContext('2d').getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
+  return r * 256 + g + b / 256 - 32768;
+}
+
+// ════════════════════════════════════════════════════════
+// GEOJSON INPUT
+// ════════════════════════════════════════════════════════
+function onGeoJSONInput(el) {
+  const text = el.value.trim();
+  const info = document.getElementById('parse-info');
+  if (!text) {
+    el.classList.remove('valid', 'invalid');
+    info.textContent = '';
+    document.getElementById('btn-compute').disabled = true;
+    return;
+  }
+  try {
+    const gj  = JSON.parse(text);
+    const pts = extractPoints(gj);
+    if (pts.length < 2) throw new Error(t('ต้องมีอย่างน้อย 2 จุด', 'Need at least 2 points'));
+    el.classList.add('valid'); el.classList.remove('invalid');
+    info.textContent = t(`✔ พบ ${pts.length} ป้ายหยุด`, `✔ Found ${pts.length} stops`);
+    info.style.color = '#2ecc71';
+    document.getElementById('btn-compute').disabled = false;
+    setStatus('loading', `${pts.length} ป้าย — พร้อมคำนวณ`, `${pts.length} stops — ready`);
+  } catch (e) {
+    el.classList.add('invalid'); el.classList.remove('valid');
+    info.textContent = `✖ ${e.message}`;
+    info.style.color = '#e74c3c';
+    document.getElementById('btn-compute').disabled = true;
+    setStatus('error', 'GeoJSON ไม่ถูกต้อง', 'Invalid GeoJSON');
+  }
+}
+
+function extractPoints(gj) {
+  const features = gj.type === 'FeatureCollection' ? gj.features : [gj];
+  return features
+    .filter(f => f.geometry && f.geometry.type === 'Point')
+    .map((f, i) => ({
+      name: f.properties?.name || f.properties?.title || f.properties?.Name || `ป้าย ${i + 1}`,
+      lng:  f.geometry.coordinates[0],
+      lat:  f.geometry.coordinates[1],
+      elevM: 175,
+    }));
+}
+
+// ════════════════════════════════════════════════════════
+// PHYSICS HELPERS
+// ════════════════════════════════════════════════════════
+function haversineKm(a, b) {
+  const dx = (b.lng - a.lng) * 111.32 * Math.cos(a.lat * Math.PI / 180);
+  const dy = (b.lat - a.lat) * 110.574;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// OSRM routing on real roads
+const OSRM_BASE = 'https://router.project-osrm.org';
+async function osrmRouteKm(a, b) {
+  try {
+    const coords = `${a.lng},${a.lat};${b.lng},${b.lat}`;
+    const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=false`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+      return haversineKm(a, b); // fallback
+    }
+    return data.routes[0].distance / 1000; // meters → km
+  } catch {
+    return haversineKm(a, b); // fallback
+  }
+}
+
+async function osrmRouteGeometry(a, b) {
+  try {
+    const coords = `${a.lng},${a.lat};${b.lng},${b.lat}`;
+    const url = `${OSRM_BASE}/route/v1/driving/${coords}?geometries=geojson&overview=full`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+      return [[a.lng, a.lat], [b.lng, b.lat]]; // fallback straight line
+    }
+    return data.routes[0].geometry.coordinates;
+  } catch {
+    return [[a.lng, a.lat], [b.lng, b.lat]]; // fallback
+  }
+}
+
+function segmentEnergyKwh(from, to, distKm) {
+  const d = distKm || haversineKm(from, to);
+  if (d < 0.000001) return 0;
+  const grade = (to.elevM - from.elevM) / (d * 1000);  // decimal
+  const mult  = grade >= 0 ? 1 + grade * 5 : 1 + grade * 3;
+  return d * KWH_PER_KM * Math.max(0.3, mult);
+}
+
+// ════════════════════════════════════════════════════════
+// NEAREST-NEIGHBOR TSP (Async OSRM version)
+// ════════════════════════════════════════════════════════
+async function nearestNeighborTSP(pts, mode) {
+  const n = pts.length;
+  if (n === 0) return [];
+  const visited = new Array(n).fill(false);
+  const route   = [0];
+  visited[0]    = true;
+
+  for (let step = 1; step < n; step++) {
+    const curr = route[route.length - 1];
+    let bestJ = -1, bestC = Infinity;
+
+    for (let j = 0; j < n; j++) {
+      if (!visited[j]) {
+        // Use OSRM for real road distance
+        const d = await osrmRouteKm(pts[curr], pts[j]);
+        const c = mode === 'energy' ? segmentEnergyKwh(pts[curr], pts[j], d) : d;
+        if (c < bestC) { bestC = c; bestJ = j; }
+      }
+    }
+    route.push(bestJ);
+    visited[bestJ] = true;
+  }
+  route.push(0);   // close loop
+  return route;
+}
+
+// ════════════════════════════════════════════════════════
+// MAIN: RUN OPTIMIZATION
+// ════════════════════════════════════════════════════════
+async function runOptimize() {
+  const text = document.getElementById('geojson-input').value.trim();
+  let pts;
+  try { pts = extractPoints(JSON.parse(text)); }
+  catch { setStatus('error', 'GeoJSON ผิด', 'Invalid GeoJSON'); return; }
+  if (pts.length < 2) { setStatus('error', 'ต้องมีอย่างน้อย 2 จุด', 'Need at least 2 stops'); return; }
+
+  document.getElementById('btn-compute').disabled = true;
+
+  // 1. Fetch DEM elevation for every stop
+  for (let i = 0; i < pts.length; i++) {
+    setStatus('loading', `กำลังดึง DEM ${i + 1}/${pts.length}...`, `Fetching DEM ${i + 1}/${pts.length}...`);
+    const e = await getDEMElevation(pts[i].lng, pts[i].lat, 14);
+    pts[i].elevM = (e !== null && e > 50 && e < 800) ? Math.round(e * 10) / 10 : 175;
+  }
+
+  setStatus('loading', 'คำนวณ TSP + OSRM routing...', 'Running TSP + OSRM routing...');
+
+  // 2. Run TSP (async with OSRM)
+  const order = await nearestNeighborTSP(pts, mode);
+
+  // 3. Fetch OSRM route geometry for each segment
+  setStatus('loading', 'ดึงเส้นทางบนถนนจริง...', 'Fetching real-road geometry...');
+  const routeGeometries = [];
+  for (let i = 0; i < order.length - 1; i++) {
+    const geom = await osrmRouteGeometry(pts[order[i]], pts[order[i + 1]]);
+    routeGeometries.push(geom);
+  }
+
+  // 4. Compute route metrics with OSRM distances
+  let totalKm = 0, totalKwh = 0;
+  const segKwh = [], segKm = [];
+  for (let i = 0; i < order.length - 1; i++) {
+    const d = await osrmRouteKm(pts[order[i]], pts[order[i + 1]]);
+    const e = segmentEnergyKwh(pts[order[i]], pts[order[i + 1]], d);
+    totalKm  += d;  totalKwh += e;
+    segKm.push(d);  segKwh.push(e);
+  }
+
+  stops      = pts;
+  routeOrder = order;
+  routeGeoms = routeGeometries; // Store for map rendering
+
+  // 5. Render
+  renderMap(pts, order, routeGeometries);
+  renderResults(pts, order, totalKm, totalKwh, segKm, segKwh);
+  renderCharts(pts, order, segKwh);
+
+  setStatus('ok', `${order.length - 1} ป้าย · ${totalKm.toFixed(2)} km · ${totalKwh.toFixed(2)} kWh`, `${order.length - 1} stops · ${totalKm.toFixed(2)} km · ${totalKwh.toFixed(2)} kWh`);
+  document.getElementById('btn-compute').disabled = false;
+  document.getElementById('results-section').style.display = '';
+  document.getElementById('empty-hint').style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════════
+// MAP RENDERING
+// ════════════════════════════════════════════════════════
+function renderMap(pts, order, routeGeometries) {
+  // Remove old markers
+  pinMarkers.forEach(m => m.remove());
+  pinMarkers.length = 0;
+
+  if (!map.getSource('opt-route')) return;
+
+  // Use OSRM route geometries (real roads)
+  const allCoords = [];
+  for (let i = 0; i < routeGeometries.length; i++) {
+    allCoords.push(...routeGeometries[i]);
+  }
+
+  map.getSource('opt-route').setData({
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: allCoords }, properties: {} }],
+  });
+
+  // Return dashed: last stop → first stop (use straight line for now, can use OSRM too)
+  const lastI = order[order.length - 2];
+  map.getSource('opt-return').setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [[pts[lastI].lng, pts[lastI].lat], [pts[0].lng, pts[0].lat]] },
+      properties: {},
+    }],
+  });
+
+  // Store GeoJSON for export
+  optGeoJSON = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { type: 'route', mode, totalStops: order.length - 1 },
+        geometry: { type: 'LineString', coordinates: allCoords },
+      },
+      ...order.slice(0, -1).map((si, seq) => ({
+        type: 'Feature',
+        properties: { name: pts[si].name, seq: seq + 1, elevM: pts[si].elevM },
+        geometry: { type: 'Point', coordinates: [pts[si].lng, pts[si].lat] },
+      })),
+    ],
+  };
+
+  // Add numbered stop markers
+  order.slice(0, -1).forEach((si, seq) => {
+    const el = document.createElement('div');
+    el.className = 'opt-stop-pin' + (seq === 0 ? ' is-start' : '');
+    el.textContent = seq + 1;
+
+    const popup = new maplibregl.Popup({ closeButton: false, offset: 14 })
+      .setHTML(`
+        <div class="pu-title">${pts[si].name}</div>
+        <div class="pu-row"><span><span class="lang-th">ลำดับ</span><span class="lang-en">Order</span></span><span>#${seq + 1}</span></div>
+        <div class="pu-row"><span><span class="lang-th">ความสูง</span><span class="lang-en">Elev.</span></span><span>${pts[si].elevM.toFixed(1)} m</span></div>
+        <div class="pu-row"><span><span class="lang-th">พิกัด</span><span class="lang-en">Coords</span></span><span>${pts[si].lat.toFixed(5)}, ${pts[si].lng.toFixed(5)}</span></div>
+      `);
+
+    const m = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([pts[si].lng, pts[si].lat])
+      .setPopup(popup)
+      .addTo(map);
+    pinMarkers.push(m);
+  });
+
+  // Fit map
+  const lngs = pts.map(p => p.lng), lats = pts.map(p => p.lat);
+  map.fitBounds(
+    [[Math.min(...lngs) - 0.006, Math.min(...lats) - 0.006],
+     [Math.max(...lngs) + 0.006, Math.max(...lats) + 0.006]],
+    { padding: 60, duration: 900 }
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// SIDEBAR RESULTS
+// ════════════════════════════════════════════════════════
+function renderResults(pts, order, totalKm, totalKwh, segKm, segKwh) {
+  const avgEff   = totalKm > 0 ? totalKwh / totalKm : 0;
+  const co2SaveG = Math.round(totalKm * NGV_CO2_G_KM);
+  const costTHB  = (totalKwh * COST_THB_KWH).toFixed(0);
+  const maxElv   = Math.max(...order.slice(0, -1).map(i => pts[i].elevM));
+  const minElv   = Math.min(...order.slice(0, -1).map(i => pts[i].elevM));
+
+  const ml = (th, en) => `<span class="lang-th">${th}</span><span class="lang-en">${en}</span>`;
+  document.getElementById('metric-grid').innerHTML = `
+    <div class="metric-item"><div class="mv">${order.length - 1}</div><div class="ml">${ml('ป้ายหยุด','Stops')}</div></div>
+    <div class="metric-item"><div class="mv">${totalKm.toFixed(2)}</div><div class="ml">${ml('km / รอบ','km / loop')}</div></div>
+    <div class="metric-item"><div class="mv">${totalKwh.toFixed(3)}</div><div class="ml">${ml('kWh / รอบ','kWh / loop')}</div></div>
+    <div class="metric-item"><div class="mv">${avgEff.toFixed(3)}</div><div class="ml">${ml('kWh/km เฉลี่ย','avg kWh/km')}</div></div>
+    <div class="metric-item"><div class="mv">${co2SaveG.toLocaleString()}</div><div class="ml">${ml('CO₂ ลด (g/รอบ) vs NGV','CO₂ Saved (g/loop) vs NGV')}</div></div>
+    <div class="metric-item"><div class="mv">${costTHB}</div><div class="ml">${ml('ค่าไฟ (฿/รอบ)','Elec. cost (฿/loop)')}</div></div>
+    <div class="metric-item"><div class="mv">${minElv.toFixed(0)}</div><div class="ml">${ml('ความสูงต่ำสุด (ม.)','Min elev. (m)')}</div></div>
+    <div class="metric-item"><div class="mv">${maxElv.toFixed(0)}</div><div class="ml">${ml('ความสูงสูงสุด (ม.)','Max elev. (m)')}</div></div>
+  `;
+
+  const seq = order.slice(0, -1).map((si, idx) => {
+    const isLast = idx === order.length - 2;
+    const nextSi = order[idx + 1];
+    return `
+      <div class="stop-row">
+        <div class="stop-num ${idx === 0 ? 'start' : ''}">${idx + 1}</div>
+        <div class="stop-nm">${pts[si].name}</div>
+        <div class="stop-elv">${pts[si].elevM.toFixed(0)}m</div>
+      </div>
+      ${!isLast
+        ? `<div class="seg-arrow">↓ ${segKm[idx].toFixed(3)} km · ${segKwh[idx].toFixed(3)} kWh</div>`
+        : `<div class="seg-arrow">↩ <span class="lang-th">กลับ</span><span class="lang-en">return</span> ${segKm[idx].toFixed(3)} km · ${segKwh[idx].toFixed(3)} kWh</div>`
+      }
+    `;
+  }).join('');
+  document.getElementById('stop-sequence').innerHTML = seq;
+}
+
+// ════════════════════════════════════════════════════════
+// CHARTS
+// ════════════════════════════════════════════════════════
+let elevChart = null, energyChart = null;
+
+function renderCharts(pts, order, segKwh) {
+  const stopsInOrder = order.slice(0, -1);
+  const elevVals   = stopsInOrder.map(i => pts[i].elevM);
+  const elevLabels = stopsInOrder.map((i, idx) => `${idx + 1}: ${pts[i].name.slice(0, 10)}`);
+  const segLabels  = order.slice(0, -1).map((si, idx) => {
+    const nextSeq = idx < order.length - 2 ? idx + 2 : 1;
+    return `${idx + 1}→${nextSeq}`;
+  });
+
+  // Elevation chart
+  if (elevChart) elevChart.destroy();
+  elevChart = new Chart(document.getElementById('chart-elev').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: elevLabels,
+      datasets: [{
+        label: 'ความสูง (ม.)',
+        data: elevVals,
+        borderColor: 'var(--accent-cyan)',
+        backgroundColor: 'rgba(126,179,255,0.1)',
+        borderWidth: 2, fill: true,
+        pointRadius: 6,
+        pointBackgroundColor: elevVals.map((_, i) => i === 0 ? '#2ecc71' : 'var(--accent-cyan)'),
+        pointBorderColor: '#fff', pointBorderWidth: 1.5,
+        tension: 0.3,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${t('ความสูง','Elev.')}: ${ctx.parsed.y?.toFixed(1)} m` } }
+      },
+      scales: {
+        x: { ticks: { color: '#555', maxTicksLimit: 10, font: { size: 9 } }, grid: { color: 'rgba(90, 160, 242, 0.2)' } },
+        y: { ticks: { color: '#555', callback: v => `${v}m` }, grid: { color: 'rgba(90, 160, 242, 0.2)' } },
+      },
+    },
+  });
+
+  // Energy bar chart
+  const BASE_KWH = segKwh.map((_, i) => {
+    const d = haversineKm(pts[order[i]], pts[order[i + 1]]);
+    return d * KWH_PER_KM;   // flat-terrain reference
+  });
+
+  if (energyChart) energyChart.destroy();
+  energyChart = new Chart(document.getElementById('chart-energy').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: segLabels,
+      datasets: [
+        {
+          label: 'grade-aware kWh',
+          data: segKwh.map(v => +v.toFixed(4)),
+          backgroundColor: segKwh.map((v, i) => v > BASE_KWH[i] * 1.05 ? '#e74c3c99' : 'var(--accent-cyan)88'),
+          borderColor:     segKwh.map((v, i) => v > BASE_KWH[i] * 1.05 ? '#e74c3c' : 'var(--accent-cyan)'),
+          borderWidth: 1,
+        },
+        {
+          label: 'flat baseline',
+          data: BASE_KWH.map(v => +v.toFixed(4)),
+          backgroundColor: 'transparent',
+          borderColor: '#444',
+          borderWidth: 1,
+          type: 'line',
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#555', font: { size: 8 } }, grid: { color: 'rgba(90, 160, 242, 0.2)' } },
+        y: { ticks: { color: '#555', callback: v => `${v}` }, grid: { color: 'rgba(90, 160, 242, 0.2)' },
+             title: { display: true, text: 'kWh', color: '#555', font: { size: 9 } } },
+      },
+    },
+  });
+}
+
+// ════════════════════════════════════════════════════════
+// CONTROLS
+// ════════════════════════════════════════════════════════
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-dist').classList.toggle('active', m === 'dist');
+  document.getElementById('mode-energy').classList.toggle('active', m === 'energy');
+}
+
+function exportRoute() {
+  if (!optGeoJSON) return;
+  const blob = new Blob([JSON.stringify(optGeoJSON, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `optimized-route-${mode}-${Date.now()}.geojson`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function t(th, en) {
+  return (document.body.getAttribute('data-lang') || 'th') === 'en' ? en : th;
+}
+
+function setStatus(type, msgTh, msgEn) {
+  const cls = type || '';
+  const el = document.getElementById('hdr-status');
+  el.textContent = msgTh;
+  el.className = (cls + ' lang-th').trim();
+  const elEn = document.getElementById('hdr-status-en');
+  if (elEn) { elEn.textContent = msgEn || msgTh; elEn.className = (cls + ' lang-en').trim(); }
+}
+
+// ── Language toggle ──────────────────────────────────────────
+function toggleLang() {
+  const body = document.body;
+  const currentLang = body.getAttribute('data-lang');
+  const newLang = currentLang === 'th' ? 'en' : 'th';
+  body.setAttribute('data-lang', newLang);
+
+  document.getElementById('btn-th').classList.toggle('active', newLang === 'th');
+  document.getElementById('btn-en').classList.toggle('active', newLang === 'en');
+
+  localStorage.setItem('lang', newLang);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const savedLang = localStorage.getItem('lang') || 'th';
+  document.body.setAttribute('data-lang', savedLang);
+  document.getElementById('btn-th').classList.toggle('active', savedLang === 'th');
+  document.getElementById('btn-en').classList.toggle('active', savedLang === 'en');
+});
+</script>
+</body>
+</html>
