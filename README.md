@@ -1,6 +1,6 @@
-# KKU EV Bus Digital Twin — ตัวอย่างการพัฒนา Digital Twin สำหรับระบบขนส่ง
+# KKU EV Bus Digital Twin — An Example for Transportation Digital Twin Development
 
-> **หมายเหตุ:** repository นี้เปิดเผยเพื่อเป็น **ตัวอย่าง (example)** สำหรับนักพัฒนาที่สนใจนำแนวทางไปประยุกต์ใช้กับการพัฒนา Digital Twin ในระบบขนส่ง (Transportation Digital Twin) เท่านั้น โค้ดที่แชร์ไว้ **ไม่ใช่โค้ดล่าสุดของงานวิจัย** และมีการตัดส่วนประกอบบางส่วนออกเพื่อความเหมาะสม
+> **Note:** This repository is published as an **example** for developers interested in applying Digital Twin concepts to transportation systems. The code shared here is **not the latest version used in the research** and has been simplified for illustrative purposes only.
 
 ---
 
@@ -22,29 +22,29 @@ By bridging the physical and digital worlds, this Digital Twin ensures the EV fl
 
 ---
 
-## คู่มือการรันแบบจำลอง
+## Running the Simulation
 
-### สิ่งที่ต้องมี
+### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (รองรับ Windows / macOS / Linux)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows / macOS / Linux)
 - Git
 
-### ขั้นตอน
+### Steps
 
-**1. Clone repository**
+**1. Clone the repository**
 
 ```bash
 git clone https://github.com/nuttkku/kku-ev-twin.git
 cd kku-ev-twin
 ```
 
-**2. สร้างไฟล์ `.env`**
+**2. Create the `.env` file**
 
 ```bash
 cp .env.example .env
 ```
 
-เปิดไฟล์ `.env` และแก้ไขรหัสผ่าน PostgreSQL ตามต้องการ (ค่า default ใช้งานได้ทันทีสำหรับการทดสอบ)
+Open `.env` and update the PostgreSQL password as needed. The default values work out of the box for local testing.
 
 ```env
 POSTGRES_DB=ev_twin
@@ -55,37 +55,38 @@ MQTT_PORT=1883
 TZ=Asia/Bangkok
 ```
 
-**3. Build และ Start ทุก service**
+**3. Build and start all services**
 
 ```bash
 docker compose up -d --build
 ```
 
-Docker จะสร้าง 3 container อัตโนมัติ:
-| Container | บทบาท | Port |
+This starts 3 containers automatically:
+
+| Container | Role | Port |
 |---|---|---|
 | `ev_postgres` | PostgreSQL database | 5432 |
 | `ev_backend` | Node.js simulation engine + MQTT broker | 3000, 1883 |
 | `ev_frontend` | Nginx static frontend | 8080 |
 
-**4. เปิด browser**
+**4. Open in browser**
 
-| หน้า | URL | คำอธิบาย |
+| Page | URL | Description |
 |---|---|---|
-| Green Line Simulator | http://localhost:8080/sim-green.html | แบบจำลองพลังงานสายเขียว พร้อม terrain 3D |
-| Route Optimizer | http://localhost:8080/route-optimizer.html | คำนวณเส้นทางประหยัดพลังงานด้วย TSP + DEM |
+| Green Line Simulator | http://localhost:8080 | Energy simulation with 3D terrain |
+| Route Optimizer | http://localhost:8080/route-optimizer.html | Grade-aware TSP route optimization |
 
-**5. ตรวจสอบสถานะระบบ**
+**5. Verify the simulation is running**
 
 ```bash
-# ดูสถานะ backend และแบบจำลอง
+# Check backend and simulation status
 curl http://localhost:3000/health
 
-# ดูสถิติฝูงรถ real-time
+# Get real-time fleet statistics
 curl http://localhost:3000/stats
 ```
 
-ผลลัพธ์ตัวอย่าง:
+Example response:
 ```json
 {
   "simTime": "2025-08-01T08:30:00.000Z",
@@ -95,20 +96,20 @@ curl http://localhost:3000/stats
 }
 ```
 
-### หยุด / รีสตาร์ท
+### Stop / Restart
 
 ```bash
-# หยุดทุก service
+# Stop all services
 docker compose down
 
-# รีสตาร์ท (ไม่ build ใหม่)
+# Restart without rebuilding
 docker compose up -d
 
-# ดู logs
+# View logs
 docker compose logs -f backend
 ```
 
-### สถาปัตยกรรมระบบ
+### System Architecture
 
 ```
 Frontend (Nginx :8080)
