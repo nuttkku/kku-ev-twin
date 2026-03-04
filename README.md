@@ -1,4 +1,4 @@
-# KKU EV Bus Digital Twin — An Example for Transportation Digital Twin Development
+# Digital Twin-Based Energy Footprint Optimization for a University EV Shuttle Bus System
 
 > **Note:** This repository is published as an **example** for developers interested in applying Digital Twin concepts to transportation systems. The code shared here is **not the latest version used in the research** and has been simplified for illustrative purposes only.
 
