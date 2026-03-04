@@ -131,4 +131,9 @@ Frontend (Nginx :8080)
 
 ---
 
-*Wanut Padee, Passpun Jinota, Wanida Kanarkard — Faculty of Engineering, Khon Kaen University*
+**Wanut Padee**<sup>1,4</sup>, **Passpun Jinota**<sup>2</sup>, **Wanida Kanarkard**<sup>3,4</sup>
+
+<sup>1</sup> Office of Digital Technology, Khon Kaen University, Thailand
+<sup>2</sup> Central Administration Division: Office of the President, Khon Kaen University, Thailand
+<sup>3</sup> Department of Computer Engineering, Khon Kaen University, Thailand
+<sup>4</sup> Smart City Operation Center, Khon Kaen University, Thailand
