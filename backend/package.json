@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "aedes": "^0.51.3",
+    "aedes": "^1.1.1",
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
     "net": "^1.0.2",
